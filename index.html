@@ -7,32 +7,18 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    :root{
-      --ink:#0b0f19; --muted:#64748b;
-      --base:#5a52ff; --teal:#0fc4b2;
-    }
+    :root{ --ink:#0b0f19; --muted:#64748b; --base:#5a52ff; --teal:#0fc4b2; }
     *{box-sizing:border-box}
-    body{
-      margin:0; overflow:hidden; background:#fff;
-      font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-      display:flex; justify-content:center; padding:40px 16px;
-    }
-    .chart-wrapper{max-width:1100px; width:100%;}
-    h1{margin:0 0 10px; text-align:center; font-size:22px; font-weight:600; color:var(--ink);}
-    .legend-note{margin:2px 0 10px; text-align:center; color:var(--muted); font-size:13px;}
-    .chips{
-      display:flex; align-items:center; justify-content:center; gap:10px;
-      flex-wrap:wrap; margin:14px 0 8px;
-    }
-    .chip{
-      display:inline-flex; align-items:center; gap:8px; padding:8px 10px;
-      border:1px solid #e5e7eb; border-radius:999px; font-size:13px; color:#111827; background:#fff;
-      box-shadow:0 1px 1px rgba(0,0,0,.03);
-    }
-    .dot{width:10px; height:10px; border-radius:50%;}
+    body{margin:0;overflow:hidden;background:#fff;font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center;padding:40px 16px;}
+    .chart-wrapper{max-width:1100px;width:100%;}
+    h1{margin:0 0 10px;text-align:center;font-size:22px;font-weight:600;color:var(--ink);}
+    .legend-note{margin:2px 0 10px;text-align:center;color:var(--muted);font-size:13px;}
+    .chips{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:14px 0 8px;}
+    .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:999px;font-size:13px;color:#111827;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.03);}
+    .dot{width:10px;height:10px;border-radius:50%;}
     .dot.teal{background:var(--teal)}
     .dot.base{background:var(--base)}
-    canvas{width:100% !important; height:auto !important; background:transparent !important;}
+    canvas{width:100% !important;height:auto !important;background:transparent !important;}
   </style>
 </head>
 <body>
@@ -40,7 +26,7 @@
     <h1>Évolution de la part variable du Tarif Bleu : Historique & Projection 2026</h1>
     <div class="legend-note">Unités : €/kWh <strong>TTC</strong></div>
 
-    <!-- petites étiquettes (chips) : dernière date + valeurs -->
+    <!-- petites étiquettes du dernier with/without -->
     <div id="lastvals" class="chips" aria-live="polite"></div>
 
     <canvas id="chart"></canvas>
@@ -48,11 +34,11 @@
   </div>
 
   <script>
-    // URLs RAW GitHub
+    // URLs RAW
     const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
     const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
-    // utilitaires format
+    // utils format
     const fmtMonthFR = iso => {
       try { return new Date(iso).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'}); }
       catch { return String(iso ?? ""); }
@@ -63,13 +49,13 @@
     };
     const fmtEUR4 = n => (typeof n === 'number' ? n.toFixed(4).replace('.', ',') + "€" : "—");
 
-    // plugin pour dessiner une petite étiquette au-dessus des points marqués
+    // plugin pour afficher un petit label au-dessus des points marqués showPointLabel
     const pointLabelPlugin = {
       id: 'pointLabelPlugin',
-      afterDatasetsDraw(chart) {
+      afterDatasetsDraw(chart){
         const {ctx, data} = chart;
         data.datasets.forEach((ds, di) => {
-          if (!ds.showPointLabel) return;
+          if(!ds.showPointLabel) return;
           const meta = chart.getDatasetMeta(di);
           meta.data.forEach((el, i) => {
             const v = ds.data[i];
@@ -87,7 +73,6 @@
       }
     };
 
-    // chips + extraction dernières valeurs
     function renderLastValues(rows){
       const target = document.getElementById('lastvals');
       const sorted = (rows||[])
@@ -101,7 +86,7 @@
         <span class="chip" title="Avec ARENH"><span class="dot teal"></span><strong>Avec ARENH</strong>&nbsp;&nbsp;${fmtEUR4(last.withARENH)}</span>
         <span class="chip" title="Sans ARENH"><span class="dot base"></span><strong>Sans ARENH</strong>&nbsp;&nbsp;${fmtEUR4(last.withoutARENH)}</span>
       `;
-      return { with:last.withARENH, without:last.withoutARENH };
+      return { date:last.Date, with:last.withARENH, without:last.withoutARENH };
     }
 
     function renderChart(histoRows, levels){
@@ -117,10 +102,7 @@
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
       const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,0.22)"); gF.addColorStop(1,"rgba(15,196,178,0)");
 
-      const d = new Date(); d.setDate(d.getDate()-1);
-      const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-
-      // datasets principaux (uniquement ceux visibles dans la légende)
+      // datasets principaux (légende allégée)
       const datasets = [
         {
           label: "Tarif Bleu (historique)",
@@ -135,7 +117,7 @@
           fill:true
         },
         {
-          label: "Projection 2026",
+          label: "Projection 2026", // (*) label court
           data: f2026,
           borderColor:"#0fc4b2",
           backgroundColor:gF,
@@ -149,7 +131,7 @@
         }
       ];
 
-      // deux points (avec / sans) sur la dernière abscisse — masqués de la légende
+      // seulement 2 points (avec/sans), sur la dernière abscisse — masqués de la légende
       if (levels && labels.length){
         const lastIdx = labels.length - 1;
         const nulls = n => Array.from({length:n}, ()=>null);
@@ -157,7 +139,7 @@
         if (typeof levels.with === 'number') {
           const arrWith = nulls(labels.length); arrWith[lastIdx] = levels.with;
           datasets.push({
-            label: " ",               // masque l'entrée côté légende
+            label: " ",               // (*) vide -> pas d’entrée visible
             type: 'line',
             data: arrWith,
             borderColor: 'transparent',
@@ -167,13 +149,13 @@
             pointHoverRadius: 6,
             showLine: false,
             showPointLabel: true,
-            _skipLegend: true        // marqueur interne pour le filtre de légende
+            _skipLegend: true         // (*) marqueur interne
           });
         }
         if (typeof levels.without === 'number') {
           const arrWithout = nulls(labels.length); arrWithout[lastIdx] = levels.without;
           datasets.push({
-            label: " ",
+            label: " ",               // (*) vide -> pas d’entrée visible
             type: 'line',
             data: arrWithout,
             borderColor: 'transparent',
@@ -183,7 +165,7 @@
             pointHoverRadius: 6,
             showLine: false,
             showPointLabel: true,
-            _skipLegend: true
+            _skipLegend: true         // (*) marqueur interne
           });
         }
       }
@@ -200,10 +182,10 @@
               labels:{
                 color:"#1f2937",
                 font:{ size:13, weight:"600" },
-                // filtre : garde seulement les datasets sans _skipLegend
+                // (*) ne garder que les deux entrées “historiques / projection”
                 filter:(item, chart) => {
                   const ds = chart.data.datasets[item.datasetIndex];
-                  return !ds._skipLegend && ds.label && ds.label.trim().length > 0;
+                  return !ds._skipLegend && ds.label && ds.label.trim().length>0;
                 }
               }
             },
@@ -243,7 +225,7 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-        const levels = renderLastValues(liveRows); // chips + retourne {with, without}
+        const levels = renderLastValues(liveRows); // chips + valeurs
         renderChart(histoRows, levels);
       }catch(e){
         console.error(e);
@@ -253,5 +235,6 @@
   </script>
 </body>
 </html>
+
 
 
