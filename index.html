@@ -49,174 +49,121 @@
   </div>
 
   <script>
-    // URLs des JSON (brut GitHub)
-    const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
-    const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
+  const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
+  const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
-    const fmtMonthFR = iso => {
-      try { return new Date(iso).toLocaleDateString('fr-FR', {year:'numeric', month:'2-digit'}); }
-      catch { return String(iso ?? ""); }
-    };
-    const fmtDateFR = iso => {
-      try { return new Date(iso).toLocaleDateString('fr-FR', {day:'2-digit', month:'long', year:'numeric'}); }
-      catch { return String(iso ?? ""); }
-    };
-    const fmtEUR4 = n => {
-      if (typeof n !== 'number' || isNaN(n)) return "—";
-      // 4 décimales, séparateur français + symbole €
-      return n.toFixed(4).replace('.', ',') + "€";
-    };
+  const fmtMonthFR = iso => new Date(iso).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});
+  const fmtEUR4 = n => n.toFixed(4).replace('.', ',') + "€";
 
-    // Render du graphique (historique + prévision)
-    function renderChart(rows){
-      const clean = rows
-        .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
-        .sort((a,b) => new Date(a.Date) - new Date(b.Date));
+  // --- Rendu du graphique, avec options pour ajouter des "lignes niveaux" ensuite
+  function renderChart(rows, levels){
+    const clean = rows
+      .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
+      .sort((a,b) => new Date(a.Date) - new Date(b.Date));
+    const labels   = clean.map(r => fmtMonthFR(r.Date));
+    const baseVals = clean.map(r => (typeof r.AVG === "number" ? r.AVG : null));
+    const f2026    = clean.map(r => (typeof r.Forecast2026 === "number" ? r.Forecast2026 : null));
 
-      const labels   = clean.map(r => fmtMonthFR(r.Date));
-      const baseVals = clean.map(r => (typeof r.AVG === "number" ? r.AVG : null));
-      const f2026    = clean.map(r => (typeof r.Forecast2026 === "number" ? r.Forecast2026 : null));
+    const ctx = document.getElementById("chart").getContext("2d");
+    const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
+    const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,.22)");  gF.addColorStop(1,"rgba(15,196,178,0)");
 
-      const ctx = document.getElementById("chart").getContext("2d");
+    const d = new Date(); d.setDate(d.getDate()-1);
+    const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
 
-      // dégradés
-      const gBase = ctx.createLinearGradient(0,0,0,300);
-      gBase.addColorStop(0,"rgba(90,82,255,0.22)");
-      gBase.addColorStop(1,"rgba(90,82,255,0.00)");
+    const datasets = [
+      {
+        label: "Tarif Bleu (historique)",
+        data: baseVals,
+        borderColor:"#5a52ff", backgroundColor:gBase,
+        borderWidth:1.6, pointRadius:0, spanGaps:true, stepped:"before", tension:0, fill:true
+      },
+      {
+        label: "Prédiction février 2026 à la date du " + yLabel,
+        data: f2026,
+        borderColor:"#0fc4b2", backgroundColor:gF,
+        borderWidth:1.6, borderDash:[5,4], pointRadius:0, spanGaps:true, stepped:"before", tension:0, fill:true
+      }
+    ];
 
-      const gF = ctx.createLinearGradient(0,0,0,300);
-      gF.addColorStop(0,"rgba(15,196,178,0.22)");
-      gF.addColorStop(1,"rgba(15,196,178,0.00)");
+    // --- Ajout des 2 niveaux actuels (lignes horizontales)
+    if (levels) {
+      const lastIdx = labels.length - 1;
+      const pointMask = i => (i === lastIdx ? 3 : 0); // petit point sur la dernière abscisse
 
-      // libellé dynamique pour la prévision
-      const d = new Date(); d.setDate(d.getDate() - 1);
-      const yesterday = d.toLocaleDateString('fr-FR',{day:'2-digit', month:'long', year:'numeric'});
+      if (typeof levels.with === 'number') {
+        datasets.push({
+          label: "Niveau actuel — avec ARENH",
+          data: labels.map(()=>levels.with),
+          borderColor:"#0fc4b2",   // même couleur que le chip "avec"
+          borderWidth:2,
+          borderDash:[2,2],
+          pointRadius: labels.map((_,i)=>pointMask(i)),
+          fill:false
+        });
+      }
+      if (typeof levels.without === 'number') {
+        datasets.push({
+          label: "Niveau actuel — sans ARENH",
+          data: labels.map(()=>levels.without),
+          borderColor:"#5a52ff",   // même couleur que le chip "sans"
+          borderWidth:2,
+          borderDash:[2,2],
+          pointRadius: labels.map((_,i)=>pointMask(i)),
+          fill:false
+        });
+      }
+    }
 
-      new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: "Tarif Bleu (historique)",
-              data: baseVals,
-              borderColor: "#5a52ff",
-              backgroundColor: gBase,
-              borderWidth: 1.6,
-              pointRadius: 0,
-              spanGaps: true,
-              stepped: "before",
-              tension: 0,
-              fill: true
-            },
-            {
-              label: "Prédiction février 2026 à la date du " + yesterday,
-              data: f2026,
-              borderColor: "#0fc4b2",
-              backgroundColor: gF,
-              borderWidth: 1.6,
-              borderDash: [5,4],
-              pointRadius: 0,
-              spanGaps: true,
-              stepped: "before",
-              tension: 0,
-              fill: true
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          interaction: { mode: 'nearest', intersect: false },
-          plugins: {
-            legend: {
-              position: "bottom",
-              labels: { color: "#1f2937", font: { size: 13, weight: "600" } }
-            },
-            tooltip: {
-              backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
-              titleColor:"#111827", bodyColor:"#4b5563",
-              titleFont:{ weight:'700' }, bodyFont:{ weight:'500' },
-              padding:10, cornerRadius:10,
-              callbacks: {
-                label: (ctx) => `${ctx.dataset.label} : ${ctx.parsed.y?.toFixed(4)} € / kWh TTC`
+    new Chart(ctx, {
+      type:'line',
+      data:{ labels, datasets },
+      options:{
+        responsive:true,
+        interaction:{ mode:'nearest', intersect:false },
+        plugins:{
+          legend:{ position:"bottom", labels:{ color:"#1f2937", font:{ size:13, weight:"600" } } },
+          tooltip:{
+            backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
+            titleColor:"#111827", bodyColor:"#4b5563",
+            padding:10, cornerRadius:10,
+            callbacks:{
+              label:(ctx)=>{
+                const y = ctx.parsed.y;
+                return `${ctx.dataset.label} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
               }
             }
-          },
-          scales: {
-            y: {
-              ticks: { color:"#6b7280", callback: v => `${Number(v).toFixed(3)} €` },
-              grid: { color:"rgba(0,0,0,0.06)" },
-              border: { display:false }
-            },
-            x: {
-              offset:true,
-              ticks: { color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:12 },
-              grid: { display:false },
-              border: { display:false }
-            }
           }
+        },
+        scales:{
+          y:{ ticks:{ color:"#6b7280", callback:v=>`${Number(v).toFixed(3)} €` }, grid:{ color:"rgba(0,0,0,.06)" }, border:{ display:false } },
+          x:{ offset:true, ticks:{ color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:12 }, grid:{ display:false }, border:{ display:false } }
         }
-      });
-    }
-
-    // Affiche la dernière ligne (withARENH / withoutARENH) sous forme de chips
-    function renderLastValues(rows){
-      const target = document.getElementById('lastvals');
-      if(!Array.isArray(rows) || rows.length === 0){ target.textContent = ""; return; }
-
-      // on prend la ligne la plus récente avec deux nombres valides
-      const sorted = rows
-        .filter(r => r?.Date && typeof r?.withARENH === 'number' && typeof r?.withoutARENH === 'number')
-        .sort((a,b) => new Date(a.Date) - new Date(b.Date));
-
-      const last = sorted[sorted.length - 1];
-      if(!last){ target.textContent = ""; return; }
-
-      const dLabel = fmtDateFR(last.Date);
-      const vWith  = fmtEUR4(last.withARENH);
-      const vNo    = fmtEUR4(last.withoutARENH);
-
-      target.innerHTML = `
-        <span class="chip" title="Dernière date">
-          Dernières valeurs au <strong>${dLabel}</strong>
-        </span>
-        <span class="chip" title="Colonne B (withARENH)">
-          <span class="dot teal" aria-hidden="true"></span>
-          <strong>Avec ARENH</strong>&nbsp;&nbsp;${vWith}
-        </span>
-        <span class="chip" title="Colonne C (withoutARENH)">
-          <span class="dot base" aria-hidden="true"></span>
-          <strong>Sans ARENH</strong>&nbsp;&nbsp;${vNo}
-        </span>
-      `;
-    }
-
-    // Lancement : on charge les deux sources en parallèle
-    (async () => {
-      const noCache = `?v=${Date.now()}`;
-      const errBox = document.getElementById('err');
-
-      try{
-        const [histoRes, liveRes] = await Promise.all([
-          fetch(HISTO_URL + noCache, {cache:"no-store"}),
-          fetch(LIVE_URL  + noCache, {cache:"no-store"})
-        ]);
-
-        if(!histoRes.ok) throw new Error("Historique HTTP " + histoRes.status);
-        if(!liveRes.ok)  throw new Error("Live HTTP " + liveRes.status);
-
-        const [histoRows, liveRows] = await Promise.all([histoRes.json(), liveRes.json()]);
-
-        renderChart(histoRows);
-        renderLastValues(liveRows);
-
-        // Exemple de dernière valeur attendue : 30/09/2025 — 0,1678€ / 0,1838€
-        // (Affichée automatiquement si présente dans FEPPN/Graph/data.json)
-      }catch(e){
-        console.error(e);
-        errBox.textContent = "Erreur de chargement des données.";
       }
-    })();
-  </script>
+    });
+  }
+
+  // --- Récupère la dernière ligne from FEPPN/Graph/data.json
+  function extractLevels(liveRows){
+    const sorted = (liveRows||[])
+      .filter(r => r?.Date && typeof r?.withARENH === 'number' && typeof r?.withoutARENH === 'number')
+      .sort((a,b)=> new Date(a.Date) - new Date(b.Date));
+    if (!sorted.length) return null;
+    const last = sorted[sorted.length-1];
+    return { with: last.withARENH, without: last.withoutARENH, date: last.Date };
+  }
+
+  (async ()=>{
+    const bust = `?v=${Date.now()}`;
+    const [hRes, lRes] = await Promise.all([
+      fetch(HISTO_URL + bust, {cache:"no-store"}),
+      fetch(LIVE_URL  + bust, {cache:"no-store"})
+    ]);
+    const [histo, live] = await Promise.all([hRes.json(), lRes.json()]);
+    const levels = extractLevels(live);
+    renderChart(histo, levels);
+  })();
+</script>
+
 </body>
 </html>
