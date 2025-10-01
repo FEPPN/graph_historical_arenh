@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>TRVE — Historique (Tarif Bleu) & Prévision 2026</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --ink:#0b0f19; --muted:#64748b; --grid:#0000000f;
+      --base:#5a52ff; --baseA:rgba(90,82,255,.22);
+      --teal:#0fc4b2; --tealA:rgba(15,196,178,.22);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; overflow:hidden; background:#fff;
+      font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+      display:flex; justify-content:center; padding:40px 16px;
+    }
+    .chart-wrapper{max-width:1100px; width:100%;}
+    h1{margin:0 0 10px; text-align:center; font-size:22px; font-weight:600; color:var(--ink);}
+    .legend-note{margin:2px 0 10px; text-align:center; color:var(--muted); font-size:13px;}
+    .chips{
+      display:flex; align-items:center; justify-content:center; gap:10px;
+      flex-wrap:wrap; margin:14px 0 8px;
+    }
+    .chip{
+      display:inline-flex; align-items:center; gap:8px; padding:8px 10px;
+      border:1px solid #e5e7eb; border-radius:999px; font-size:13px; color:#111827; background:#fff;
+      box-shadow:0 1px 1px rgba(0,0,0,.03);
+    }
+    .dot{width:10px; height:10px; border-radius:50%;}
+    .dot.base{background:var(--base)}
+    .dot.teal{background:var(--teal)}
+    canvas{width:100% !important; height:auto !important; background:transparent !important;}
+  </style>
+</head>
+<body>
+  <div class="chart-wrapper">
+    <h1>Évolution de la part variable du Tarif Bleu : Historique & Projection 2026</h1>
+    <div class="legend-note">Unités : €/kWh <strong>TTC</strong></div>
+
+    <!-- Dernières valeurs issues de FEPPN/Graph/data.json -->
+    <div id="lastvals" class="chips" aria-live="polite"></div>
+
+    <canvas id="chart"></canvas>
+    <div id="err" class="legend-note" style="color:#ef4444;"></div>
+  </div>
+
+  <script>
+    // URLs des JSON (brut GitHub)
+    const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
+    const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
+
+    const fmtMonthFR = iso => {
+      try { return new Date(iso).toLocaleDateString('fr-FR', {year:'numeric', month:'2-digit'}); }
+      catch { return String(iso ?? ""); }
+    };
+    const fmtDateFR = iso => {
+      try { return new Date(iso).toLocaleDateString('fr-FR', {day:'2-digit', month:'long', year:'numeric'}); }
+      catch { return String(iso ?? ""); }
+    };
+    const fmtEUR4 = n => {
+      if (typeof n !== 'number' || isNaN(n)) return "—";
+      // 4 décimales, séparateur français + symbole €
+      return n.toFixed(4).replace('.', ',') + "€";
+    };
+
+    // Render du graphique (historique + prévision)
+    function renderChart(rows){
+      const clean = rows
+        .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
+        .sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+      const labels   = clean.map(r => fmtMonthFR(r.Date));
+      const baseVals = clean.map(r => (typeof r.AVG === "number" ? r.AVG : null));
+      const f2026    = clean.map(r => (typeof r.Forecast2026 === "number" ? r.Forecast2026 : null));
+
+      const ctx = document.getElementById("chart").getContext("2d");
+
+      // dégradés
+      const gBase = ctx.createLinearGradient(0,0,0,300);
+      gBase.addColorStop(0,"rgba(90,82,255,0.22)");
+      gBase.addColorStop(1,"rgba(90,82,255,0.00)");
+
+      const gF = ctx.createLinearGradient(0,0,0,300);
+      gF.addColorStop(0,"rgba(15,196,178,0.22)");
+      gF.addColorStop(1,"rgba(15,196,178,0.00)");
+
+      // libellé dynamique pour la prévision
+      const d = new Date(); d.setDate(d.getDate() - 1);
+      const yesterday = d.toLocaleDateString('fr-FR',{day:'2-digit', month:'long', year:'numeric'});
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Tarif Bleu (historique)",
+              data: baseVals,
+              borderColor: "#5a52ff",
+              backgroundColor: gBase,
+              borderWidth: 1.6,
+              pointRadius: 0,
+              spanGaps: true,
+              stepped: "before",
+              tension: 0,
+              fill: true
+            },
+            {
+              label: "Prédiction février 2026 à la date du " + yesterday,
+              data: f2026,
+              borderColor: "#0fc4b2",
+              backgroundColor: gF,
+              borderWidth: 1.6,
+              borderDash: [5,4],
+              pointRadius: 0,
+              spanGaps: true,
+              stepped: "before",
+              tension: 0,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          interaction: { mode: 'nearest', intersect: false },
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: { color: "#1f2937", font: { size: 13, weight: "600" } }
+            },
+            tooltip: {
+              backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
+              titleColor:"#111827", bodyColor:"#4b5563",
+              titleFont:{ weight:'700' }, bodyFont:{ weight:'500' },
+              padding:10, cornerRadius:10,
+              callbacks: {
+                label: (ctx) => `${ctx.dataset.label} : ${ctx.parsed.y?.toFixed(4)} € / kWh TTC`
+              }
+            }
+          },
+          scales: {
+            y: {
+              ticks: { color:"#6b7280", callback: v => `${Number(v).toFixed(3)} €` },
+              grid: { color:"rgba(0,0,0,0.06)" },
+              border: { display:false }
+            },
+            x: {
+              offset:true,
+              ticks: { color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:12 },
+              grid: { display:false },
+              border: { display:false }
+            }
+          }
+        }
+      });
+    }
+
+    // Affiche la dernière ligne (withARENH / withoutARENH) sous forme de chips
+    function renderLastValues(rows){
+      const target = document.getElementById('lastvals');
+      if(!Array.isArray(rows) || rows.length === 0){ target.textContent = ""; return; }
+
+      // on prend la ligne la plus récente avec deux nombres valides
+      const sorted = rows
+        .filter(r => r?.Date && typeof r?.withARENH === 'number' && typeof r?.withoutARENH === 'number')
+        .sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+      const last = sorted[sorted.length - 1];
+      if(!last){ target.textContent = ""; return; }
+
+      const dLabel = fmtDateFR(last.Date);
+      const vWith  = fmtEUR4(last.withARENH);
+      const vNo    = fmtEUR4(last.withoutARENH);
+
+      target.innerHTML = `
+        <span class="chip" title="Dernière date">
+          Dernières valeurs au <strong>${dLabel}</strong>
+        </span>
+        <span class="chip" title="Colonne B (withARENH)">
+          <span class="dot teal" aria-hidden="true"></span>
+          <strong>Avec ARENH</strong>&nbsp;&nbsp;${vWith}
+        </span>
+        <span class="chip" title="Colonne C (withoutARENH)">
+          <span class="dot base" aria-hidden="true"></span>
+          <strong>Sans ARENH</strong>&nbsp;&nbsp;${vNo}
+        </span>
+      `;
+    }
+
+    // Lancement : on charge les deux sources en parallèle
+    (async () => {
+      const noCache = `?v=${Date.now()}`;
+      const errBox = document.getElementById('err');
+
+      try{
+        const [histoRes, liveRes] = await Promise.all([
+          fetch(HISTO_URL + noCache, {cache:"no-store"}),
+          fetch(LIVE_URL  + noCache, {cache:"no-store"})
+        ]);
+
+        if(!histoRes.ok) throw new Error("Historique HTTP " + histoRes.status);
+        if(!liveRes.ok)  throw new Error("Live HTTP " + liveRes.status);
+
+        const [histoRows, liveRows] = await Promise.all([histoRes.json(), liveRes.json()]);
+
+        renderChart(histoRows);
+        renderLastValues(liveRows);
+
+        // Exemple de dernière valeur attendue : 30/09/2025 — 0,1678€ / 0,1838€
+        // (Affichée automatiquement si présente dans FEPPN/Graph/data.json)
+      }catch(e){
+        console.error(e);
+        errBox.textContent = "Erreur de chargement des données.";
+      }
+    })();
+  </script>
+</body>
+</html>
