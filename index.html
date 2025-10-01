@@ -55,7 +55,7 @@
     // plugin pour afficher un petit label au-dessus des points marqués showPointLabel
     const pointLabelPlugin = {
       id: 'pointLabelPlugin',
-      afterDatasetsDraw(chart){
+      afterDatasetsDraw(chart, args, opts){
         const {ctx, data} = chart;
         data.datasets.forEach((ds, di) => {
           if(!ds.showPointLabel) return;
@@ -69,7 +69,7 @@
             ctx.fillStyle = '#111827';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            ctx.fillText(fmtEUR4(v), x, y - 8);
+            ctx.fillText(fmtEUR4(v), x, y - 8); // petit label au-dessus
             ctx.restore();
           });
         });
@@ -155,8 +155,7 @@
             pointRadius: 5,
             pointHoverRadius: 6,
             showLine: false,
-            showPointLabel: true,
-            _skipLegend: true   // <-- masquer de la légende
+            showPointLabel: true   // flag pour le plugin
           });
         }
         // sans ARENH (point violet)
@@ -172,8 +171,7 @@
             pointRadius: 5,
             pointHoverRadius: 6,
             showLine: false,
-            showPointLabel: true,
-            _skipLegend: true   // <-- masquer de la légende
+            showPointLabel: true   // flag pour le plugin
           });
         }
       }
@@ -185,25 +183,14 @@
           responsive:true,
           interaction:{ mode:'nearest', intersect:false },
           plugins:{
-            legend:{
-              position:"bottom",
-              labels:{
-                color:"#1f2937",
-                font:{ size:13, weight:"600" },
-                // >>>>>>> ICI : filtre la légende pour ignorer les datasets marqués _skipLegend
-                filter: (item, chart) => {
-                  const ds = chart.data.datasets[item.datasetIndex];
-                  return !ds._skipLegend;
-                }
-              }
-            },
+            legend:{ position:"bottom", labels:{ color:"#1f2937", font:{ size:13, weight:"600" } } },
             tooltip:{
               backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
               titleColor:"#111827", bodyColor:"#4b5563",
               padding:10, cornerRadius:10,
               callbacks:{
                 label:(ctx)=>{
-                  const y = ctx.parsed?.y;
+                  const y = ctx.parsed.y;
                   return `${ctx.dataset.label} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
                 }
               }
@@ -232,7 +219,7 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-        const levels = renderLastValues(liveRows); // chips + valeurs
+        const levels = renderLastValues(liveRows); // affiche les chips et renvoie {with, without}
         renderChart(histoRows, levels);
       }catch(e){
         console.error(e);
@@ -242,7 +229,5 @@
   </script>
 </body>
 </html>
-
-
 
 
