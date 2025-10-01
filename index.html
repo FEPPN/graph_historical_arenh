@@ -146,7 +146,7 @@
         if (typeof levels.with === 'number') {
           const arrWith = nulls(labels.length); arrWith[lastIdx] = levels.with;
           datasets.push({
-            label: "Avec ARENH (dernier point)",
+            label: "",
             type: 'line',
             data: arrWith,
             borderColor: 'transparent',
@@ -163,7 +163,7 @@
         if (typeof levels.without === 'number') {
           const arrWithout = nulls(labels.length); arrWithout[lastIdx] = levels.without;
           datasets.push({
-            label: "Sans ARENH (dernier point)",
+            label: "",
             type: 'line',
             data: arrWithout,
             borderColor: 'transparent',
