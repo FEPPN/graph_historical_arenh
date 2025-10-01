@@ -8,32 +8,20 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root{
-      --ink:#0b0f19; --muted:#64748b; --grid:#0000000f;
-      --base:#5a52ff; --baseA:rgba(90,82,255,.22);
-      --teal:#0fc4b2; --tealA:rgba(15,196,178,.22);
+      --ink:#0b0f19; --muted:#64748b;
+      --base:#5a52ff; --teal:#0fc4b2;
     }
     *{box-sizing:border-box}
-    body{
-      margin:0; overflow:hidden; background:#fff;
-      font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-      display:flex; justify-content:center; padding:40px 16px;
-    }
-    .chart-wrapper{max-width:1100px; width:100%;}
-    h1{margin:0 0 10px; text-align:center; font-size:22px; font-weight:600; color:var(--ink);}
-    .legend-note{margin:2px 0 10px; text-align:center; color:var(--muted); font-size:13px;}
-    .chips{
-      display:flex; align-items:center; justify-content:center; gap:10px;
-      flex-wrap:wrap; margin:14px 0 8px;
-    }
-    .chip{
-      display:inline-flex; align-items:center; gap:8px; padding:8px 10px;
-      border:1px solid #e5e7eb; border-radius:999px; font-size:13px; color:#111827; background:#fff;
-      box-shadow:0 1px 1px rgba(0,0,0,.03);
-    }
-    .dot{width:10px; height:10px; border-radius:50%;}
-    .dot.base{background:var(--base)}
+    body{margin:0;overflow:hidden;background:#fff;font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center;padding:40px 16px;}
+    .chart-wrapper{max-width:1100px;width:100%;}
+    h1{margin:0 0 10px;text-align:center;font-size:22px;font-weight:600;color:var(--ink);}
+    .legend-note{margin:2px 0 10px;text-align:center;color:var(--muted);font-size:13px;}
+    .chips{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:14px 0 8px;}
+    .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:999px;font-size:13px;color:#111827;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.03);}
+    .dot{width:10px;height:10px;border-radius:50%;}
     .dot.teal{background:var(--teal)}
-    canvas{width:100% !important; height:auto !important; background:transparent !important;}
+    .dot.base{background:var(--base)}
+    canvas{width:100% !important;height:auto !important;background:transparent !important;}
   </style>
 </head>
 <body>
@@ -41,7 +29,7 @@
     <h1>Évolution de la part variable du Tarif Bleu : Historique & Projection 2026</h1>
     <div class="legend-note">Unités : €/kWh <strong>TTC</strong></div>
 
-    <!-- Dernières valeurs issues de FEPPN/Graph/data.json -->
+    <!-- petites étiquettes du dernier with/without -->
     <div id="lastvals" class="chips" aria-live="polite"></div>
 
     <canvas id="chart"></canvas>
@@ -49,121 +37,196 @@
   </div>
 
   <script>
-  const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
-  const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
+    // URLs RAW
+    const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
+    const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
-  const fmtMonthFR = iso => new Date(iso).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});
-  const fmtEUR4 = n => n.toFixed(4).replace('.', ',') + "€";
+    // utils format
+    const fmtMonthFR = iso => {
+      try { return new Date(iso).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'}); }
+      catch { return String(iso ?? ""); }
+    };
+    const fmtDateFR = iso => {
+      try { return new Date(iso).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}); }
+      catch { return String(iso ?? ""); }
+    };
+    const fmtEUR4 = n => (typeof n === 'number' ? n.toFixed(4).replace('.', ',') + "€" : "—");
 
-  // --- Rendu du graphique, avec options pour ajouter des "lignes niveaux" ensuite
-  function renderChart(rows, levels){
-    const clean = rows
-      .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
-      .sort((a,b) => new Date(a.Date) - new Date(b.Date));
-    const labels   = clean.map(r => fmtMonthFR(r.Date));
-    const baseVals = clean.map(r => (typeof r.AVG === "number" ? r.AVG : null));
-    const f2026    = clean.map(r => (typeof r.Forecast2026 === "number" ? r.Forecast2026 : null));
-
-    const ctx = document.getElementById("chart").getContext("2d");
-    const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
-    const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,.22)");  gF.addColorStop(1,"rgba(15,196,178,0)");
-
-    const d = new Date(); d.setDate(d.getDate()-1);
-    const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-
-    const datasets = [
-      {
-        label: "Tarif Bleu (historique)",
-        data: baseVals,
-        borderColor:"#5a52ff", backgroundColor:gBase,
-        borderWidth:1.6, pointRadius:0, spanGaps:true, stepped:"before", tension:0, fill:true
-      },
-      {
-        label: "Prédiction février 2026 à la date du " + yLabel,
-        data: f2026,
-        borderColor:"#0fc4b2", backgroundColor:gF,
-        borderWidth:1.6, borderDash:[5,4], pointRadius:0, spanGaps:true, stepped:"before", tension:0, fill:true
-      }
-    ];
-
-    // --- Ajout des 2 niveaux actuels (lignes horizontales)
-    if (levels) {
-      const lastIdx = labels.length - 1;
-      const pointMask = i => (i === lastIdx ? 3 : 0); // petit point sur la dernière abscisse
-
-      if (typeof levels.with === 'number') {
-        datasets.push({
-          label: "Niveau actuel — avec ARENH",
-          data: labels.map(()=>levels.with),
-          borderColor:"#0fc4b2",   // même couleur que le chip "avec"
-          borderWidth:2,
-          borderDash:[2,2],
-          pointRadius: labels.map((_,i)=>pointMask(i)),
-          fill:false
+    // plugin pour afficher un petit label au-dessus des points marqués showPointLabel
+    const pointLabelPlugin = {
+      id: 'pointLabelPlugin',
+      afterDatasetsDraw(chart, args, opts){
+        const {ctx, data} = chart;
+        data.datasets.forEach((ds, di) => {
+          if(!ds.showPointLabel) return;
+          const meta = chart.getDatasetMeta(di);
+          meta.data.forEach((el, i) => {
+            const v = ds.data[i];
+            if (v == null) return;
+            const {x, y} = el.tooltipPosition();
+            ctx.save();
+            ctx.font = '600 12px Inter, system-ui, sans-serif';
+            ctx.fillStyle = '#111827';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(fmtEUR4(v), x, y - 8); // petit label au-dessus
+            ctx.restore();
+          });
         });
       }
-      if (typeof levels.without === 'number') {
-        datasets.push({
-          label: "Niveau actuel — sans ARENH",
-          data: labels.map(()=>levels.without),
-          borderColor:"#5a52ff",   // même couleur que le chip "sans"
-          borderWidth:2,
-          borderDash:[2,2],
-          pointRadius: labels.map((_,i)=>pointMask(i)),
-          fill:false
-        });
-      }
+    };
+
+    function renderLastValues(rows){
+      const target = document.getElementById('lastvals');
+      const sorted = (rows||[])
+        .filter(r => r?.Date && typeof r?.withARENH === 'number' && typeof r?.withoutARENH === 'number')
+        .sort((a,b)=> new Date(a.Date) - new Date(b.Date));
+      const last = sorted[sorted.length-1];
+      if(!last){ target.textContent = ""; return null; }
+
+      target.innerHTML = `
+        <span class="chip" title="Dernière date">Au <strong>${fmtDateFR(last.Date)}</strong></span>
+        <span class="chip" title="Avec ARENH"><span class="dot teal"></span><strong>Avec ARENH</strong>&nbsp;&nbsp;${fmtEUR4(last.withARENH)}</span>
+        <span class="chip" title="Sans ARENH"><span class="dot base"></span><strong>Sans ARENH</strong>&nbsp;&nbsp;${fmtEUR4(last.withoutARENH)}</span>
+      `;
+      return { date:last.Date, with:last.withARENH, without:last.withoutARENH };
     }
 
-    new Chart(ctx, {
-      type:'line',
-      data:{ labels, datasets },
-      options:{
-        responsive:true,
-        interaction:{ mode:'nearest', intersect:false },
-        plugins:{
-          legend:{ position:"bottom", labels:{ color:"#1f2937", font:{ size:13, weight:"600" } } },
-          tooltip:{
-            backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
-            titleColor:"#111827", bodyColor:"#4b5563",
-            padding:10, cornerRadius:10,
-            callbacks:{
-              label:(ctx)=>{
-                const y = ctx.parsed.y;
-                return `${ctx.dataset.label} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
-              }
-            }
-          }
+    function renderChart(histoRows, levels){
+      const clean = (histoRows||[])
+        .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
+        .sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+      const labels   = clean.map(r => fmtMonthFR(r.Date));
+      const baseVals = clean.map(r => (typeof r.AVG === "number" ? r.AVG : null));
+      const f2026    = clean.map(r => (typeof r.Forecast2026 === "number" ? r.Forecast2026 : null));
+
+      const ctx = document.getElementById("chart").getContext("2d");
+      const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
+      const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,0.22)"); gF.addColorStop(1,"rgba(15,196,178,0)");
+
+      const d = new Date(); d.setDate(d.getDate()-1);
+      const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+
+      // datasets principaux
+      const datasets = [
+        {
+          label: "Tarif Bleu (historique)",
+          data: baseVals,
+          borderColor:"#5a52ff",
+          backgroundColor:gBase,
+          borderWidth:1.6,
+          pointRadius:0,
+          spanGaps:true,
+          stepped:"before",
+          tension:0,
+          fill:true
         },
-        scales:{
-          y:{ ticks:{ color:"#6b7280", callback:v=>`${Number(v).toFixed(3)} €` }, grid:{ color:"rgba(0,0,0,.06)" }, border:{ display:false } },
-          x:{ offset:true, ticks:{ color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:12 }, grid:{ display:false }, border:{ display:false } }
+        {
+          label: "Prédiction février 2026 à la date du " + yLabel,
+          data: f2026,
+          borderColor:"#0fc4b2",
+          backgroundColor:gF,
+          borderWidth:1.6,
+          borderDash:[5,4],
+          pointRadius:0,
+          spanGaps:true,
+          stepped:"before",
+          tension:0,
+          fill:true
+        }
+      ];
+
+      // seulement 2 points (avec/sans), placés sur la dernière abscisse
+      if (levels && labels.length){
+        const lastIdx = labels.length - 1;
+        const nulls = size => Array.from({length:size}, ()=>null);
+
+        // avec ARENH (point teal)
+        if (typeof levels.with === 'number') {
+          const arrWith = nulls(labels.length); arrWith[lastIdx] = levels.with;
+          datasets.push({
+            label: "Avec ARENH (dernier point)",
+            type: 'line',
+            data: arrWith,
+            borderColor: 'transparent',
+            pointBackgroundColor: "#0fc4b2",
+            pointBorderColor: "#0fc4b2",
+            pointRadius: 5,
+            pointHoverRadius: 6,
+            showLine: false,
+            showPointLabel: true   // flag pour le plugin
+          });
+        }
+        // sans ARENH (point violet)
+        if (typeof levels.without === 'number') {
+          const arrWithout = nulls(labels.length); arrWithout[lastIdx] = levels.without;
+          datasets.push({
+            label: "Sans ARENH (dernier point)",
+            type: 'line',
+            data: arrWithout,
+            borderColor: 'transparent',
+            pointBackgroundColor: "#5a52ff",
+            pointBorderColor: "#5a52ff",
+            pointRadius: 5,
+            pointHoverRadius: 6,
+            showLine: false,
+            showPointLabel: true   // flag pour le plugin
+          });
         }
       }
-    });
-  }
 
-  // --- Récupère la dernière ligne from FEPPN/Graph/data.json
-  function extractLevels(liveRows){
-    const sorted = (liveRows||[])
-      .filter(r => r?.Date && typeof r?.withARENH === 'number' && typeof r?.withoutARENH === 'number')
-      .sort((a,b)=> new Date(a.Date) - new Date(b.Date));
-    if (!sorted.length) return null;
-    const last = sorted[sorted.length-1];
-    return { with: last.withARENH, without: last.withoutARENH, date: last.Date };
-  }
+      new Chart(ctx, {
+        type:'line',
+        data:{ labels, datasets },
+        options:{
+          responsive:true,
+          interaction:{ mode:'nearest', intersect:false },
+          plugins:{
+            legend:{ position:"bottom", labels:{ color:"#1f2937", font:{ size:13, weight:"600" } } },
+            tooltip:{
+              backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
+              titleColor:"#111827", bodyColor:"#4b5563",
+              padding:10, cornerRadius:10,
+              callbacks:{
+                label:(ctx)=>{
+                  const y = ctx.parsed.y;
+                  return `${ctx.dataset.label} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
+                }
+              }
+            }
+          },
+          scales:{
+            y:{ ticks:{ color:"#6b7280", callback:v=>`${Number(v).toFixed(3)} €` }, grid:{ color:"rgba(0,0,0,.06)" }, border:{ display:false } },
+            x:{ offset:true, ticks:{ color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:12 }, grid:{ display:false }, border:{ display:false } }
+          }
+        },
+        plugins:[pointLabelPlugin]
+      });
+    }
 
-  (async ()=>{
-    const bust = `?v=${Date.now()}`;
-    const [hRes, lRes] = await Promise.all([
-      fetch(HISTO_URL + bust, {cache:"no-store"}),
-      fetch(LIVE_URL  + bust, {cache:"no-store"})
-    ]);
-    const [histo, live] = await Promise.all([hRes.json(), lRes.json()]);
-    const levels = extractLevels(live);
-    renderChart(histo, levels);
-  })();
-</script>
+    (async ()=>{
+      const bust = `?v=${Date.now()}`;
+      const errBox = document.getElementById('err');
 
+      try{
+        const [hRes, lRes] = await Promise.all([
+          fetch(HISTO_URL + bust, {cache:"no-store"}),
+          fetch(LIVE_URL  + bust, {cache:"no-store"})
+        ]);
+
+        if(!hRes.ok) throw new Error("Historique HTTP " + hRes.status);
+        if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
+
+        const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
+        const levels = renderLastValues(liveRows); // affiche les chips et renvoie {with, without}
+        renderChart(histoRows, levels);
+      }catch(e){
+        console.error(e);
+        errBox.textContent = "Erreur de chargement des données.";
+      }
+    })();
+  </script>
 </body>
 </html>
+
