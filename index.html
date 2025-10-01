@@ -7,7 +7,10 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    :root{ --ink:#0b0f19; --muted:#64748b; --base:#5a52ff; --teal:#0fc4b2; }
+    :root{
+      --ink:#0b0f19; --muted:#64748b;
+      --base:#5a52ff; --teal:#0fc4b2;
+    }
     *{box-sizing:border-box}
     body{margin:0;overflow:hidden;background:#fff;font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center;padding:40px 16px;}
     .chart-wrapper{max-width:1100px;width:100%;}
@@ -52,7 +55,7 @@
     // plugin pour afficher un petit label au-dessus des points marqués showPointLabel
     const pointLabelPlugin = {
       id: 'pointLabelPlugin',
-      afterDatasetsDraw(chart){
+      afterDatasetsDraw(chart, args, opts){
         const {ctx, data} = chart;
         data.datasets.forEach((ds, di) => {
           if(!ds.showPointLabel) return;
@@ -66,7 +69,7 @@
             ctx.fillStyle = '#111827';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            ctx.fillText(fmtEUR4(v), x, y - 8);
+            ctx.fillText(fmtEUR4(v), x, y - 8); // petit label au-dessus
             ctx.restore();
           });
         });
@@ -102,7 +105,10 @@
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
       const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,0.22)"); gF.addColorStop(1,"rgba(15,196,178,0)");
 
-      // datasets principaux (légende allégée)
+      const d = new Date(); d.setDate(d.getDate()-1);
+      const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+
+      // datasets principaux
       const datasets = [
         {
           label: "Tarif Bleu (historique)",
@@ -117,7 +123,7 @@
           fill:true
         },
         {
-          label: "Projection 2026", // (*) label court
+          label: "Prédiction février 2026 à la date du " + yLabel,
           data: f2026,
           borderColor:"#0fc4b2",
           backgroundColor:gF,
@@ -131,15 +137,16 @@
         }
       ];
 
-      // seulement 2 points (avec/sans), sur la dernière abscisse — masqués de la légende
+      // seulement 2 points (avec/sans), placés sur la dernière abscisse
       if (levels && labels.length){
         const lastIdx = labels.length - 1;
-        const nulls = n => Array.from({length:n}, ()=>null);
+        const nulls = size => Array.from({length:size}, ()=>null);
 
+        // avec ARENH (point teal)
         if (typeof levels.with === 'number') {
           const arrWith = nulls(labels.length); arrWith[lastIdx] = levels.with;
           datasets.push({
-            label: " ",               // (*) vide -> pas d’entrée visible
+            label: "Avec ARENH (dernier point)",
             type: 'line',
             data: arrWith,
             borderColor: 'transparent',
@@ -148,14 +155,14 @@
             pointRadius: 5,
             pointHoverRadius: 6,
             showLine: false,
-            showPointLabel: true,
-            _skipLegend: true         // (*) marqueur interne
+            showPointLabel: true   // flag pour le plugin
           });
         }
+        // sans ARENH (point violet)
         if (typeof levels.without === 'number') {
           const arrWithout = nulls(labels.length); arrWithout[lastIdx] = levels.without;
           datasets.push({
-            label: " ",               // (*) vide -> pas d’entrée visible
+            label: "Sans ARENH (dernier point)",
             type: 'line',
             data: arrWithout,
             borderColor: 'transparent',
@@ -164,8 +171,7 @@
             pointRadius: 5,
             pointHoverRadius: 6,
             showLine: false,
-            showPointLabel: true,
-            _skipLegend: true         // (*) marqueur interne
+            showPointLabel: true   // flag pour le plugin
           });
         }
       }
@@ -177,27 +183,15 @@
           responsive:true,
           interaction:{ mode:'nearest', intersect:false },
           plugins:{
-            legend:{
-              position:"bottom",
-              labels:{
-                color:"#1f2937",
-                font:{ size:13, weight:"600" },
-                // (*) ne garder que les deux entrées “historiques / projection”
-                filter:(item, chart) => {
-                  const ds = chart.data.datasets[item.datasetIndex];
-                  return !ds._skipLegend && ds.label && ds.label.trim().length>0;
-                }
-              }
-            },
+            legend:{ position:"bottom", labels:{ color:"#1f2937", font:{ size:13, weight:"600" } } },
             tooltip:{
               backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
               titleColor:"#111827", bodyColor:"#4b5563",
               padding:10, cornerRadius:10,
               callbacks:{
                 label:(ctx)=>{
-                  const y = ctx.parsed?.y;
-                  const val = (typeof y==="number") ? fmtEUR4(y) : "—";
-                  return `${ctx.dataset.label?.trim() || "Valeur"} : ${val} / kWh TTC`;
+                  const y = ctx.parsed.y;
+                  return `${ctx.dataset.label} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
                 }
               }
             }
@@ -225,7 +219,7 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-        const levels = renderLastValues(liveRows); // chips + valeurs
+        const levels = renderLastValues(liveRows); // affiche les chips et renvoie {with, without}
         renderChart(histoRows, levels);
       }catch(e){
         console.error(e);
@@ -235,6 +229,7 @@
   </script>
 </body>
 </html>
+
 
 
 
