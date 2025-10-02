@@ -18,7 +18,7 @@
     .dot{width:10px;height:10px;border-radius:50%;}
     .dot.teal{background:var(--teal)}
     .dot.base{background:var(--base)}
-    canvas{width:100% !important;height:auto !important;background:transparent !important;}
+    canvas{width:100% !important;height:auto !important;background:transparent !important;min-height:320px;}
   </style>
 </head>
 <body>
@@ -38,13 +38,11 @@
     const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
     const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
-    // Format helpers
-    const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});
+    // Helpers
+    const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});  // MM/AAAA
     const fmtDateFR  = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-    const fmtDayFR   = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const fmtDayFR   = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}); // JJ/MM/AAAA
     const fmtEUR4    = n => (typeof n === 'number' && isFinite(n)) ? n.toFixed(4).replace('.', ',') + "€" : "—";
-
-    // Parse robuste "0,1678€" -> 0.1678
     const toNum = (val) => {
       if (typeof val === 'number') return val;
       if (val == null) return null;
@@ -84,7 +82,12 @@
         .filter(r => r?.Date && (toNum(r?.withARENH) !== null) && (toNum(r?.withoutARENH) !== null))
         .sort((a,b)=> new Date(a.Date) - new Date(b.Date));
       const last = sorted[sorted.length-1];
-      if(!last){ target.textContent = ""; return null; }
+      console.log("Live rows count =", sorted.length, "Last live row =", last);
+
+      if(!last){
+        target.textContent = "";
+        return null;
+      }
 
       const withN = toNum(last.withARENH);
       const withoutN = toNum(last.withoutARENH);
@@ -98,33 +101,34 @@
     }
 
     function renderChart(histoRows, levels){
-      // 1) Historique + Projection (mois)
+      // Historique + Projection (mois)
       const clean = (histoRows||[])
         .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
         .sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+      console.log("Historique rows after filter =", clean.length, clean.slice(0,3), "...");
 
       let labels   = clean.map(r => fmtMonthFR(r.Date)); // MM/AAAA
       let baseVals = clean.map(r => toNum(r.AVG));
       let f2026    = clean.map(r => toNum(r.Forecast2026));
 
-      // 2) Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour avoir une étiquette "à jour"
+      // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour voir les points du jour
       let liveIdx = -1;
       if (levels && levels.date) {
         const liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
         if (!labels.includes(liveLabel)) {
           labels.push(liveLabel);
-          baseVals.push(null);   // pas de valeur historique ce jour-là
-          f2026.push(null);      // ni de projection ponctuelle ce jour-là
+          baseVals.push(null);
+          f2026.push(null);
         }
         liveIdx = labels.indexOf(liveLabel);
       }
 
+      console.log("Labels length =", labels.length, "Last label =", labels[labels.length-1], "liveIdx =", liveIdx);
+
       const ctx = document.getElementById("chart").getContext("2d");
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
       const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,0.22)"); gF.addColorStop(1,"rgba(15,196,178,0)");
-
-      const d = new Date(); d.setDate(d.getDate()-1);
-      const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
 
       const datasets = [
         {
@@ -154,11 +158,10 @@
         }
       ];
 
-      // 3) Deux points (Avec / Sans) placés à la DERNIÈRE DATE LIVE
+      // Deux points (Avec / Sans) à la DERNIÈRE DATE LIVE, hors légende
       if (levels && liveIdx >= 0){
         const nulls = n => Array.from({length:n}, ()=>null);
 
-        // Avec ARENH (point teal)
         if (typeof levels.with === 'number') {
           const arrWith = nulls(labels.length); arrWith[liveIdx] = levels.with;
           datasets.push({
@@ -172,8 +175,6 @@
             _skipLegend: true
           });
         }
-
-        // Sans ARENH (point violet)
         if (typeof levels.without === 'number') {
           const arrWithout = nulls(labels.length); arrWithout[liveIdx] = levels.without;
           datasets.push({
@@ -187,13 +188,17 @@
             _skipLegend: true
           });
         }
+      } else {
+        console.warn("Pas de niveaux live ou pas d'index live -> points non ajoutés.");
       }
 
+      // Garde la légende clean (ignore _skipLegend)
       new Chart(ctx, {
         type:'line',
         data:{ labels, datasets },
         options:{
           responsive:true,
+          maintainAspectRatio:true,
           interaction:{ mode:'nearest', intersect:false },
           plugins:{
             legend:{
@@ -201,11 +206,7 @@
               labels:{
                 color:"#1f2937",
                 font:{ size:13, weight:"600" },
-                // légende allégée : on ignore les datasets marqués _skipLegend
-                filter:(item, chart) => {
-                  const ds = chart.data.datasets[item.datasetIndex];
-                  return !ds._skipLegend;
-                }
+                filter:(item, chart) => !chart.data.datasets[item.datasetIndex]._skipLegend
               }
             },
             tooltip:{
@@ -244,14 +245,21 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
+        console.log("Historique rows (raw) =", histoRows?.length, histoRows?.[0]);
+        console.log("Live rows (raw) =", liveRows?.length, liveRows?.slice(-1)[0]);
+
         const levels = renderLastValues(liveRows);   // chips + {date, with, without}
-        renderChart(histoRows, levels);              // points posés à la dernière date live (JJ/MM/AAAA)
+        console.log("Niveaux live calculés =", levels);
+
+        if (!histoRows?.length) throw new Error("Historique vide ou JSON invalide.");
+        if (!levels) throw new Error("Impossible de lire les dernières valeurs live.");
+
+        renderChart(histoRows, levels);              // points posés à la dernière date live
       }catch(e){
         console.error(e);
-        errBox.textContent = "Erreur de chargement des données.";
+        errBox.textContent = "Erreur de chargement des données : " + e.message;
       }
     })();
   </script>
 </body>
 </html>
-
