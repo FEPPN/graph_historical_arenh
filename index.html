@@ -7,10 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    :root{
-      --ink:#0b0f19; --muted:#64748b;
-      --base:#5a52ff; --teal:#0fc4b2;
-    }
+    :root{ --ink:#0b0f19; --muted:#64748b; --base:#5a52ff; --teal:#0fc4b2; }
     *{box-sizing:border-box}
     body{margin:0;overflow:hidden;background:#fff;font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center;padding:40px 16px;}
     .chart-wrapper{max-width:1100px;width:100%;}
@@ -26,7 +23,7 @@
 </head>
 <body>
   <div class="chart-wrapper">
-    <h1>Évolution de la part variable du Tarif Bleu <br>Historique & Projection 2026 avec et sans ARENH</h1>
+    <h1>Évolution de la part variable du Tarif Bleu<br>Historique & Projection 2026</h1>
     <div class="legend-note">Unités : €/kWh <strong>TTC</strong></div>
 
     <!-- petites étiquettes du dernier with/without -->
@@ -41,21 +38,18 @@
     const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
     const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
-    // utils format
-    const fmtMonthFR = iso => {
-      try { return new Date(iso).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'}); }
-      catch { return String(iso ?? ""); }
-    };
-    const fmtDateFR = iso => {
-      try { return new Date(iso).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}); }
-      catch { return String(iso ?? ""); }
-    };
+    // --- cible des points : FÉVRIER 2026 ---
+    const TARGET_DATE = new Date(2026, 1, 1); // (mois 0=janvier, donc 1 = février)
+    const fmtMonthFR = iso => new Date(iso).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});
+    const TARGET_LABEL = fmtMonthFR(TARGET_DATE);
+
+    const fmtDateFR = iso => new Date(iso).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
     const fmtEUR4 = n => (typeof n === 'number' ? n.toFixed(4).replace('.', ',') + "€" : "—");
 
-    // plugin pour afficher un petit label au-dessus des points marqués showPointLabel
+    // plugin pour afficher une petite étiquette au-dessus des points
     const pointLabelPlugin = {
       id: 'pointLabelPlugin',
-      afterDatasetsDraw(chart, args, opts){
+      afterDatasetsDraw(chart){
         const {ctx, data} = chart;
         data.datasets.forEach((ds, di) => {
           if(!ds.showPointLabel) return;
@@ -69,7 +63,7 @@
             ctx.fillStyle = '#111827';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
-            ctx.fillText(fmtEUR4(v), x, y - 8); // petit label au-dessus
+            ctx.fillText(fmtEUR4(v), x, y - 8);
             ctx.restore();
           });
         });
@@ -79,27 +73,39 @@
     function renderLastValues(rows){
       const target = document.getElementById('lastvals');
       const sorted = (rows||[])
-        .filter(r => r?.Date && typeof r?.withARENH === 'number' && typeof r?.withoutARENH === 'number')
+        .filter(r => r?.Date && r?.withARENH != null && r?.withoutARENH != null)
         .sort((a,b)=> new Date(a.Date) - new Date(b.Date));
       const last = sorted[sorted.length-1];
       if(!last){ target.textContent = ""; return null; }
 
+      const withN = typeof last.withARENH === 'number' ? last.withARENH : Number(String(last.withARENH).replace('€','').replace(',','.'));
+      const withoutN = typeof last.withoutARENH === 'number' ? last.withoutARENH : Number(String(last.withoutARENH).replace('€','').replace(',','.'));
+
       target.innerHTML = `
         <span class="chip" title="Dernière date">Au <strong>${fmtDateFR(last.Date)}</strong></span>
-        <span class="chip" title="Avec ARENH"><span class="dot teal"></span><strong>Avec ARENH</strong>&nbsp;&nbsp;${fmtEUR4(last.withARENH)}</span>
-        <span class="chip" title="Sans ARENH"><span class="dot base"></span><strong>Sans ARENH</strong>&nbsp;&nbsp;${fmtEUR4(last.withoutARENH)}</span>
+        <span class="chip" title="Avec ARENH"><span class="dot teal"></span><strong>Avec ARENH</strong>&nbsp;&nbsp;${fmtEUR4(withN)}</span>
+        <span class="chip" title="Sans ARENH"><span class="dot base"></span><strong>Sans ARENH</strong>&nbsp;&nbsp;${fmtEUR4(withoutN)}</span>
       `;
-      return { date:last.Date, with:last.withARENH, without:last.withoutARENH };
+      return { with: withN, without: withoutN };
     }
 
     function renderChart(histoRows, levels){
+      // Nettoyage & tri historique
       const clean = (histoRows||[])
         .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
         .sort((a,b) => new Date(a.Date) - new Date(b.Date));
 
-      const labels   = clean.map(r => fmtMonthFR(r.Date));
-      const baseVals = clean.map(r => (typeof r.AVG === "number" ? r.AVG : null));
-      const f2026    = clean.map(r => (typeof r.Forecast2026 === "number" ? r.Forecast2026 : null));
+      let labels   = clean.map(r => fmtMonthFR(r.Date));
+      let baseVals = clean.map(r => (typeof r.AVG === "number" ? r.AVG : null));
+      let f2026    = clean.map(r => (typeof r.Forecast2026 === "number" ? r.Forecast2026 : null));
+
+      // S'assurer que la grille contient "02/2026"
+      if (!labels.includes(TARGET_LABEL)) {
+        labels.push(TARGET_LABEL);
+        baseVals.push(null);
+        f2026.push(null);
+      }
+      const targetIdx = labels.indexOf(TARGET_LABEL);
 
       const ctx = document.getElementById("chart").getContext("2d");
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
@@ -108,7 +114,6 @@
       const d = new Date(); d.setDate(d.getDate()-1);
       const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
 
-      // datasets principaux
       const datasets = [
         {
           label: "Tarif Bleu (historique)",
@@ -123,7 +128,7 @@
           fill:true
         },
         {
-          label: "Prédiction février 2026 à la date du " + yLabel,
+          label: "Projection 2026",
           data: f2026,
           borderColor:"#0fc4b2",
           backgroundColor:gF,
@@ -137,16 +142,15 @@
         }
       ];
 
-      // seulement 2 points (avec/sans), placés sur la dernière abscisse
-      if (levels && labels.length){
-        const lastIdx = labels.length - 1;
-        const nulls = size => Array.from({length:size}, ()=>null);
+      // Deux points placés à 02/2026 (prévision), masqués de la légende
+      if (levels && targetIdx >= 0){
+        const nulls = n => Array.from({length:n}, ()=>null);
 
-        // avec ARENH (point teal)
         if (typeof levels.with === 'number') {
-          const arrWith = nulls(labels.length); arrWith[lastIdx] = levels.with;
+          const arrWith = nulls(labels.length); arrWith[targetIdx] = levels.with;
           datasets.push({
-            label: "",
+            label: "",                    // masque le texte
+            customName: "Avec ARENH",     // utilisé pour tooltip si besoin
             type: 'line',
             data: arrWith,
             borderColor: 'transparent',
@@ -156,14 +160,14 @@
             pointHoverRadius: 6,
             showLine: false,
             showPointLabel: true,
-            _skipLegend: true// flag pour le plugin
+            _skipLegend: true             // filtré de la légende
           });
         }
-        // sans ARENH (point violet)
         if (typeof levels.without === 'number') {
-          const arrWithout = nulls(labels.length); arrWithout[lastIdx] = levels.without;
+          const arrWithout = nulls(labels.length); arrWithout[targetIdx] = levels.without;
           datasets.push({
             label: "",
+            customName: "Sans ARENH",
             type: 'line',
             data: arrWithout,
             borderColor: 'transparent',
@@ -173,7 +177,7 @@
             pointHoverRadius: 6,
             showLine: false,
             showPointLabel: true,
-            _skipLegend: true// flag pour le plugin
+            _skipLegend: true
           });
         }
       }
@@ -185,15 +189,27 @@
           responsive:true,
           interaction:{ mode:'nearest', intersect:false },
           plugins:{
-            legend:{ position:"bottom", labels:{ color:"#1f2937", font:{ size:13, weight:"600" } } },
+            legend:{
+              position:"bottom",
+              labels:{
+                color:"#1f2937",
+                font:{ size:13, weight:"600" },
+                // n'afficher que les datasets sans _skipLegend
+                filter:(item, chart) => {
+                  const ds = chart.data.datasets[item.datasetIndex];
+                  return !ds._skipLegend;
+                }
+              }
+            },
             tooltip:{
               backgroundColor:"#fff", borderColor:"#e5e7eb", borderWidth:1,
               titleColor:"#111827", bodyColor:"#4b5563",
               padding:10, cornerRadius:10,
               callbacks:{
                 label:(ctx)=>{
-                  const y = ctx.parsed.y;
-                  return `${ctx.dataset.label} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
+                  const y = ctx.parsed?.y;
+                  const name = ctx.dataset.customName || ctx.dataset.label || "Valeur";
+                  return `${name} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
                 }
               }
             }
@@ -221,7 +237,7 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-        const levels = renderLastValues(liveRows); // affiche les chips et renvoie {with, without}
+        const levels = renderLastValues(liveRows); // chips + valeurs
         renderChart(histoRows, levels);
       }catch(e){
         console.error(e);
@@ -231,5 +247,6 @@
   </script>
 </body>
 </html>
+
 
 
