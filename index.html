@@ -26,6 +26,7 @@
     <h1>Évolution de la part variable du Tarif Bleu<br>Historique & Projection 2026</h1>
     <div class="legend-note">Unités : €/kWh <strong>TTC</strong></div>
 
+    <!-- chips (dernière date live + valeurs) -->
     <div id="lastvals" class="chips" aria-live="polite"></div>
 
     <canvas id="chart"></canvas>
@@ -37,24 +38,22 @@
     const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
     const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
-    // Cible des 2 points: FÉVRIER 2026
-    const TARGET_DATE = new Date(2026, 1, 1); // mois 0=janv -> 1=févr
+    // Format helpers
     const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});
-    const TARGET_LABEL = fmtMonthFR(TARGET_DATE);
+    const fmtDateFR  = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+    const fmtDayFR   = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const fmtEUR4    = n => (typeof n === 'number' && isFinite(n)) ? n.toFixed(4).replace('.', ',') + "€" : "—";
 
-    const fmtDateFR = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-    const fmtEUR4 = n => (typeof n === 'number' && isFinite(n)) ? n.toFixed(4).replace('.', ',') + "€" : "—";
-
-    // Parse robuste : "0,1678€" -> 0.1678
+    // Parse robuste "0,1678€" -> 0.1678
     const toNum = (val) => {
       if (typeof val === 'number') return val;
       if (val == null) return null;
-      const s = String(val).replace(/\s+/g,'').replace('€','').replace(',','.');
+      const s = String(val).replace(/\s+/g,'').replace('€','').replace(',', '.');
       const n = parseFloat(s);
       return Number.isFinite(n) ? n : null;
     };
 
-    // Plugin: petite étiquette au-dessus des points marqués showPointLabel
+    // Plugin : petite étiquette au-dessus des points marqués showPointLabel
     const pointLabelPlugin = {
       id: 'pointLabelPlugin',
       afterDatasetsDraw(chart){
@@ -78,7 +77,7 @@
       }
     };
 
-    // Chips + extraction des 2 valeurs
+    // Chips + extraction dernière ligne live
     function renderLastValues(rows){
       const target = document.getElementById('lastvals');
       const sorted = (rows||[])
@@ -92,33 +91,40 @@
 
       target.innerHTML = `
         <span class="chip" title="Dernière date du flux live">Au <strong>${fmtDateFR(last.Date)}</strong></span>
-        <span class="chip" title="Avec ARENH"><span class="dot teal"></span><strong>Avec ARENH</strong>&nbsp;&nbsp;${fmtEUR4(withN)}</span>
-        <span class="chip" title="Sans ARENH"><span class="dot base"></span><strong>Sans ARENH</strong>&nbsp;&nbsp;${fmtEUR4(withoutN)}</span>
+        <span class="chip"><span class="dot teal"></span>Avec ARENH&nbsp;&nbsp;${fmtEUR4(withN)}</span>
+        <span class="chip"><span class="dot base"></span>Sans ARENH&nbsp;&nbsp;${fmtEUR4(withoutN)}</span>
       `;
-      return { with: withN, without: withoutN };
+      return { date:last.Date, with: withN, without: withoutN };
     }
 
     function renderChart(histoRows, levels){
-      // Historique/Projection
+      // 1) Historique + Projection (mois)
       const clean = (histoRows||[])
         .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
         .sort((a,b) => new Date(a.Date) - new Date(b.Date));
 
-      let labels   = clean.map(r => fmtMonthFR(r.Date));
+      let labels   = clean.map(r => fmtMonthFR(r.Date)); // MM/AAAA
       let baseVals = clean.map(r => toNum(r.AVG));
       let f2026    = clean.map(r => toNum(r.Forecast2026));
 
-      // S'assurer que "02/2026" est bien sur l'axe X
-      if (!labels.includes(TARGET_LABEL)) {
-        labels.push(TARGET_LABEL);
-        baseVals.push(null);
-        f2026.push(null);
+      // 2) Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour avoir une étiquette "à jour"
+      let liveIdx = -1;
+      if (levels && levels.date) {
+        const liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
+        if (!labels.includes(liveLabel)) {
+          labels.push(liveLabel);
+          baseVals.push(null);   // pas de valeur historique ce jour-là
+          f2026.push(null);      // ni de projection ponctuelle ce jour-là
+        }
+        liveIdx = labels.indexOf(liveLabel);
       }
-      const targetIdx = labels.indexOf(TARGET_LABEL);
 
       const ctx = document.getElementById("chart").getContext("2d");
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
       const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,0.22)"); gF.addColorStop(1,"rgba(15,196,178,0)");
+
+      const d = new Date(); d.setDate(d.getDate()-1);
+      const yLabel = d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
 
       const datasets = [
         {
@@ -148,12 +154,13 @@
         }
       ];
 
-      // Deux points calés sur "02/2026", hors légende
-      if (levels && targetIdx >= 0){
+      // 3) Deux points (Avec / Sans) placés à la DERNIÈRE DATE LIVE
+      if (levels && liveIdx >= 0){
         const nulls = n => Array.from({length:n}, ()=>null);
 
+        // Avec ARENH (point teal)
         if (typeof levels.with === 'number') {
-          const arrWith = nulls(labels.length); arrWith[targetIdx] = levels.with;
+          const arrWith = nulls(labels.length); arrWith[liveIdx] = levels.with;
           datasets.push({
             label: "", customName: "Avec ARENH",
             type: 'line', data: arrWith,
@@ -165,8 +172,10 @@
             _skipLegend: true
           });
         }
+
+        // Sans ARENH (point violet)
         if (typeof levels.without === 'number') {
-          const arrWithout = nulls(labels.length); arrWithout[targetIdx] = levels.without;
+          const arrWithout = nulls(labels.length); arrWithout[liveIdx] = levels.without;
           datasets.push({
             label: "", customName: "Sans ARENH",
             type: 'line', data: arrWithout,
@@ -192,9 +201,10 @@
               labels:{
                 color:"#1f2937",
                 font:{ size:13, weight:"600" },
+                // légende allégée : on ignore les datasets marqués _skipLegend
                 filter:(item, chart) => {
                   const ds = chart.data.datasets[item.datasetIndex];
-                  return !ds._skipLegend; // ne garde que historique + projection
+                  return !ds._skipLegend;
                 }
               }
             },
@@ -213,7 +223,7 @@
           },
           scales:{
             y:{ ticks:{ color:"#6b7280", callback:v=>`${Number(v).toFixed(3)} €` }, grid:{ color:"rgba(0,0,0,.06)" }, border:{ display:false } },
-            x:{ offset:true, ticks:{ color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:12 }, grid:{ display:false }, border:{ display:false } }
+            x:{ offset:true, ticks:{ color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:14 }, grid:{ display:false }, border:{ display:false } }
           }
         },
         plugins:[pointLabelPlugin]
@@ -234,15 +244,14 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-        const levels = renderLastValues(liveRows);      // chips + parsing robuste
-        renderChart(histoRows, levels);                 // points posés à 02/2026
+        const levels = renderLastValues(liveRows);   // chips + {date, with, without}
+        renderChart(histoRows, levels);              // points posés à la dernière date live (JJ/MM/AAAA)
       }catch(e){
         console.error(e);
-        document.getElementById('err').textContent = "Erreur de chargement des données.";
+        errBox.textContent = "Erreur de chargement des données.";
       }
     })();
   </script>
 </body>
 </html>
-
 
