@@ -26,9 +26,7 @@
     <h1>Évolution de la part variable du Tarif Bleu<br>Historique & Projection 2026</h1>
     <div class="legend-note">Unités : €/kWh <strong>TTC</strong></div>
 
-    <!-- chips (dernière date live + valeurs) -->
     <div id="lastvals" class="chips" aria-live="polite"></div>
-
     <canvas id="chart"></canvas>
     <div id="err" class="legend-note" style="color:#ef4444;"></div>
   </div>
@@ -39,9 +37,9 @@
     const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
     // Helpers
-    const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});  // MM/AAAA
+    const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});
     const fmtDateFR  = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-    const fmtDayFR   = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}); // JJ/MM/AAAA
+    const fmtDayFR   = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
     const fmtEUR4    = n => (typeof n === 'number' && isFinite(n)) ? n.toFixed(4).replace('.', ',') + "€" : "—";
     const toNum = (val) => {
       if (typeof val === 'number') return val;
@@ -56,12 +54,14 @@
       id: 'pointLabelPlugin',
       afterDatasetsDraw(chart){
         const {ctx, data} = chart;
+        if (!data || !Array.isArray(data.datasets)) return; // garde-fou
         data.datasets.forEach((ds, di) => {
-          if(!ds.showPointLabel) return;
+          if(!ds || !ds.showPointLabel) return;
           const meta = chart.getDatasetMeta(di);
+          if (!meta || !Array.isArray(meta.data)) return;
           meta.data.forEach((el, i) => {
-            const v = ds.data[i];
-            if (v == null) return;
+            const v = ds.data?.[i];
+            if (v == null || !el || typeof el.tooltipPosition !== 'function') return;
             const {x, y} = el.tooltipPosition();
             ctx.save();
             ctx.font = '600 12px Inter, system-ui, sans-serif';
@@ -78,11 +78,11 @@
     // Chips + extraction dernière ligne live
     function renderLastValues(rows){
       const target = document.getElementById('lastvals');
-      const sorted = (rows||[])
+      const arr = Array.isArray(rows) ? rows : [];
+      const sorted = arr
         .filter(r => r?.Date && (toNum(r?.withARENH) !== null) && (toNum(r?.withoutARENH) !== null))
         .sort((a,b)=> new Date(a.Date) - new Date(b.Date));
       const last = sorted[sorted.length-1];
-      console.log("Live rows count =", sorted.length, "Last live row =", last);
 
       if(!last){
         target.textContent = "";
@@ -101,18 +101,15 @@
     }
 
     function renderChart(histoRows, levels){
-      // Historique + Projection (mois)
-      const clean = (histoRows||[])
+      const clean = (Array.isArray(histoRows) ? histoRows : [])
         .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
         .sort((a,b) => new Date(a.Date) - new Date(b.Date));
-
-      console.log("Historique rows after filter =", clean.length, clean.slice(0,3), "...");
 
       let labels   = clean.map(r => fmtMonthFR(r.Date)); // MM/AAAA
       let baseVals = clean.map(r => toNum(r.AVG));
       let f2026    = clean.map(r => toNum(r.Forecast2026));
 
-      // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour voir les points du jour
+      // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour positionner les points du jour
       let liveIdx = -1;
       if (levels && levels.date) {
         const liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
@@ -123,8 +120,6 @@
         }
         liveIdx = labels.indexOf(liveLabel);
       }
-
-      console.log("Labels length =", labels.length, "Last label =", labels[labels.length-1], "liveIdx =", liveIdx);
 
       const ctx = document.getElementById("chart").getContext("2d");
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
@@ -138,6 +133,7 @@
           backgroundColor:gBase,
           borderWidth:1.6,
           pointRadius:0,
+          pointHitRadius:6,
           spanGaps:true,
           stepped:"before",
           tension:0,
@@ -151,6 +147,7 @@
           borderWidth:1.6,
           borderDash:[5,4],
           pointRadius:0,
+          pointHitRadius:6,
           spanGaps:true,
           stepped:"before",
           tension:0,
@@ -165,40 +162,46 @@
         if (typeof levels.with === 'number') {
           const arrWith = nulls(labels.length); arrWith[liveIdx] = levels.with;
           datasets.push({
-            label: "", customName: "Avec ARENH",
-            type: 'line', data: arrWith,
+            label: "",
+            customName: "Avec ARENH",
+            type: 'line',
+            data: arrWith,
             borderColor: 'transparent',
             pointBackgroundColor: "#0fc4b2",
             pointBorderColor: "#0fc4b2",
-            pointRadius: 5, pointHoverRadius: 6,
-            showLine: false, showPointLabel: true,
+            pointRadius: 5,
+            pointHitRadius: 8,
+            pointHoverRadius: 6,
+            showLine: false,
+            showPointLabel: true,
             _skipLegend: true
           });
         }
         if (typeof levels.without === 'number') {
           const arrWithout = nulls(labels.length); arrWithout[liveIdx] = levels.without;
           datasets.push({
-            label: "", customName: "Sans ARENH",
-            type: 'line', data: arrWithout,
+            label: "",
+            customName: "Sans ARENH",
+            type: 'line',
+            data: arrWithout,
             borderColor: 'transparent',
             pointBackgroundColor: "#5a52ff",
             pointBorderColor: "#5a52ff",
-            pointRadius: 5, pointHoverRadius: 6,
-            showLine: false, showPointLabel: true,
+            pointRadius: 5,
+            pointHitRadius: 8,
+            pointHoverRadius: 6,
+            showLine: false,
+            showPointLabel: true,
             _skipLegend: true
           });
         }
-      } else {
-        console.warn("Pas de niveaux live ou pas d'index live -> points non ajoutés.");
       }
 
-      // Garde la légende clean (ignore _skipLegend)
       new Chart(ctx, {
         type:'line',
         data:{ labels, datasets },
         options:{
           responsive:true,
-          maintainAspectRatio:true,
           interaction:{ mode:'nearest', intersect:false },
           plugins:{
             legend:{
@@ -206,7 +209,13 @@
               labels:{
                 color:"#1f2937",
                 font:{ size:13, weight:"600" },
-                filter:(item, chart) => !chart.data.datasets[item.datasetIndex]._skipLegend
+                // ✅ filtre défensif pour éviter l'erreur "datasets undefined"
+                filter:(item, chart) => {
+                  const ds = chart && chart.data && Array.isArray(chart.data.datasets)
+                    ? chart.data.datasets[item.datasetIndex]
+                    : null;
+                  return !!(ds && !ds._skipLegend);
+                }
               }
             },
             tooltip:{
@@ -245,16 +254,12 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-        console.log("Historique rows (raw) =", histoRows?.length, histoRows?.[0]);
-        console.log("Live rows (raw) =", liveRows?.length, liveRows?.slice(-1)[0]);
 
-        const levels = renderLastValues(liveRows);   // chips + {date, with, without}
-        console.log("Niveaux live calculés =", levels);
+        const levels = renderLastValues(liveRows);   // { date, with, without } ou null
+        if (!Array.isArray(histoRows) || !histoRows.length) throw new Error("Historique vide ou JSON invalide.");
+        if (!levels) throw new Error("Impossible de lire les dernières valeurs live (with/without).");
 
-        if (!histoRows?.length) throw new Error("Historique vide ou JSON invalide.");
-        if (!levels) throw new Error("Impossible de lire les dernières valeurs live.");
-
-        renderChart(histoRows, levels);              // points posés à la dernière date live
+        renderChart(histoRows, levels);
       }catch(e){
         console.error(e);
         errBox.textContent = "Erreur de chargement des données : " + e.message;
@@ -263,3 +268,4 @@
   </script>
 </body>
 </html>
+
