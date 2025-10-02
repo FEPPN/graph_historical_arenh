@@ -111,9 +111,8 @@
 
       // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour positionner les points du jour & l’afficher sur l’axe
       let liveIdx = -1;
-      let liveLabel = null;
       if (levels && levels.date) {
-        liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
+        const liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
         if (!labels.includes(liveLabel)) {
           labels.push(liveLabel);
           baseVals.push(null);
@@ -201,14 +200,14 @@
               position:"bottom",
               labels:{
                 color:"#1f2937",
-                // micro-légende
+                // micro-légende compacte
                 font:{ size:11, weight:"600" },
                 boxWidth:10,
                 boxHeight:10,
                 padding:8,
                 usePointStyle:true,
                 pointStyle:'line',
-                // filtre défensif : masque les datasets des points
+                // masque les datasets des points
                 filter:(item, chart) => {
                   const ds = chart && chart.data && Array.isArray(chart.data.datasets)
                     ? chart.data.datasets[item.datasetIndex]
@@ -222,11 +221,9 @@
               titleColor:"#111827", bodyColor:"#4b5563",
               padding:10, cornerRadius:10,
               callbacks:{
-                title:(items)=>{
-                  // Titre lisible : montre JJ/MM/AAAA tel quel si c’est le label live
-                  return items?.[0]?.label || '';
-                },
-                label:(ctx)=>{
+                // Laisse tel quel le label (MM/AAAA ou JJ/MM/AAAA)
+                title(items){ return items?.[0]?.label || ''; },
+                label(ctx){
                   const y = ctx.parsed?.y;
                   const name = ctx.dataset.customName || ctx.dataset.label || "Valeur";
                   return `${name} : ${typeof y==="number" ? fmtEUR4(y) : "—"} / kWh TTC`;
@@ -238,31 +235,29 @@
             y:{
               ticks:{ color:"#6b7280", callback:v=>`${Number(v).toFixed(3)} €` },
               grid:{ color:"rgba(0,0,0,.06)" },
-              border:{ display:false },
-              title:{ display:false }
+              border:{ display:false }
             },
             x:{
               offset:true,
               ticks:{
                 color:"#6b7280",
-                // axe X : garder lisible, afficher ~12-16 repères, forcer la dernière date live
                 maxRotation:0,
                 autoSkip:true,
-                maxTicksLimit:16,
-                callback:(value, idx, ticks)=>{
-                  const label = this.getLabelForValue ? this.getLabelForValue(value) : (this.chart?.data?.labels?.[idx] ?? '');
-                  // Toujours afficher le dernier label (probablement JJ/MM/AAAA)
-                  if (idx === (ticks.length - 1)) return label;
-                  // Sinon, n’afficher qu’1 mois sur 2 pour aérer si c’est du MM/AAAA
-                  if (/^\d{2}\/\d{4}$/.test(label)) {
-                    return (idx % 2 === 0) ? label : '';
-                  }
+                maxTicksLimit:18,
+                // ⚠️ utiliser "function" (pas arrow) pour que "this" = échelle
+                callback: function(value, idx, ticks){
+                  const label = this.getLabelForValue
+                    ? this.getLabelForValue(value)        // Chart.js v4
+                    : (this.chart?.data?.labels?.[idx] ?? '');
+                  // toujours afficher le dernier (souvent JJ/MM/AAAA)
+                  if (idx === ticks.length - 1) return label;
+                  // si format MM/AAAA, n’en montrer qu’1/2 pour aérer
+                  if (/^\d{2}\/\d{4}$/.test(label)) return (idx % 2 === 0) ? label : '';
                   return label;
                 }
               },
               grid:{ color:"rgba(0,0,0,0.06)", drawOnChartArea:false },
-              border:{ display:false },
-              title:{ display:false }
+              border:{ display:false }
             }
           }
         },
@@ -297,5 +292,6 @@
   </script>
 </body>
 </html>
+
 
 
