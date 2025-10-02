@@ -36,6 +36,9 @@
     const HISTO_URL = "https://raw.githubusercontent.com/FEPPN/graph_historical_TRVE/main/data.json";
     const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
+    // 🔖 Date CIBLE pour afficher les deux points (affichée comme 02/2026 sur l’axe & dans les tooltips)
+    const TARGET_DATE_ISO = "2026-02-01";
+
     // Helpers
     const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});    // MM/AAAA
     const fmtDateFR  = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
@@ -75,7 +78,7 @@
       }
     };
 
-    // Chips + extraction dernière ligne live
+    // Chips (affiche les dernières valeurs lues, même si on les place en 2026 sur le graphe)
     function renderLastValues(rows){
       const target = document.getElementById('lastvals');
       const arr = Array.isArray(rows) ? rows : [];
@@ -84,20 +87,18 @@
         .sort((a,b)=> new Date(a.Date) - new Date(b.Date));
       const last = sorted[sorted.length-1];
 
-      if(!last){
-        target.textContent = "";
-        return null;
-      }
+      if(!last){ target.textContent = ""; return null; }
 
       const withN = toNum(last.withARENH);
       const withoutN = toNum(last.withoutARENH);
 
       target.innerHTML = `
-        <span class="chip" title="Dernière date du flux live">Au <strong>${fmtDateFR(last.Date)}</strong></span>
+        <span class="chip">Derniers niveaux lus (au <strong>${fmtDateFR(last.Date)}</strong>)</span>
         <span class="chip"><span class="dot teal"></span>Avec ARENH&nbsp;&nbsp;${fmtEUR4(withN)}</span>
         <span class="chip"><span class="dot base"></span>Sans ARENH&nbsp;&nbsp;${fmtEUR4(withoutN)}</span>
+        <span class="chip">Affichés au <strong>${fmtDateFR(TARGET_DATE_ISO)}</strong> sur le graphe</span>
       `;
-      return { date:last.Date, with: withN, without: withoutN };
+      return { with: withN, without: withoutN };
     }
 
     function renderChart(histoRows, levels){
@@ -105,21 +106,25 @@
         .filter(r => r?.Date && (r?.AVG != null || r?.Forecast2026 != null))
         .sort((a,b) => new Date(a.Date) - new Date(b.Date));
 
-      let labels   = clean.map(r => fmtMonthFR(r.Date)); // MM/AAAA
+      // Labels mensuels (MM/AAAA) pour l’historique/projection
+      let labels   = clean.map(r => fmtMonthFR(r.Date));
       let baseVals = clean.map(r => toNum(r.AVG));
       let f2026    = clean.map(r => toNum(r.Forecast2026));
 
-      // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour positionner les points du jour & l’afficher sur l’axe
-      let liveIdx = -1;
-      if (levels && levels.date) {
-        const liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
-        if (!labels.includes(liveLabel)) {
-          labels.push(liveLabel);
-          baseVals.push(null);
-          f2026.push(null);
-        }
-        liveIdx = labels.indexOf(liveLabel);
+      // ➕ Ajouter la date CIBLE 2026 (JJ/MM/AAAA) pour y placer les points
+      const targetLabel = fmtDayFR(TARGET_DATE_ISO); // ex: 01/02/2026 → s’affiche 01/02/2026 dans tooltip & axe
+      if (!labels.includes(targetLabel)) {
+        labels.push(targetLabel);
+        baseVals.push(null);
+        f2026.push(null);
       }
+      const targetIdx = labels.indexOf(targetLabel);
+
+      // Libellés de légende avec dates
+      const histStart = clean.find(r => r?.AVG != null || r?.Forecast2026 != null);
+      const histEnd   = clean.slice().reverse().find(r => r?.AVG != null || r?.Forecast2026 != null);
+      const legendHistoric = `Historique (${ fmtMonthFR(histStart?.Date) } → ${ fmtMonthFR(histEnd?.Date) })`;
+      const legendProj     = `Projection (${ targetLabel.slice(3) })`; // "02/2026"
 
       const ctx = document.getElementById("chart").getContext("2d");
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
@@ -127,7 +132,7 @@
 
       const datasets = [
         {
-          label: "Historique",
+          label: legendHistoric,
           data: baseVals,
           borderColor:"#5a52ff",
           backgroundColor:gBase,
@@ -140,7 +145,7 @@
           fill:true
         },
         {
-          label: "Projection 2026",
+          label: legendProj,
           data: f2026,
           borderColor:"#0fc4b2",
           backgroundColor:gF,
@@ -155,12 +160,12 @@
         }
       ];
 
-      // Deux points (Avec / Sans) à la DERNIÈRE DATE LIVE, hors légende
-      if (levels && liveIdx >= 0){
+      // ➕ Deux points placés à la DATE CIBLE 2026 (hors légende)
+      if (levels && targetIdx >= 0){
         const nulls = n => Array.from({length:n}, ()=>null);
 
         if (typeof levels.with === 'number') {
-          const arrWith = nulls(labels.length); arrWith[liveIdx] = levels.with;
+          const arrWith = nulls(labels.length); arrWith[targetIdx] = levels.with;
           datasets.push({
             label: "", customName: "Avec ARENH",
             type: 'line', data: arrWith,
@@ -173,7 +178,7 @@
           });
         }
         if (typeof levels.without === 'number') {
-          const arrWithout = nulls(labels.length); arrWithout[liveIdx] = levels.without;
+          const arrWithout = nulls(labels.length); arrWithout[targetIdx] = levels.without;
           datasets.push({
             label: "", customName: "Sans ARENH",
             type: 'line', data: arrWithout,
@@ -193,20 +198,16 @@
         options:{
           responsive:true,
           interaction:{ mode:'nearest', intersect:false },
-          elements:{ point:{ radius:0, hitRadius:6 } },  // défauts sûrs
+          elements:{ point:{ radius:0, hitRadius:6 } },
 
           plugins:{
             legend:{
               position:"bottom",
               labels:{
                 color:"#1f2937",
-                // micro-légende compacte
                 font:{ size:11, weight:"600" },
-                boxWidth:10,
-                boxHeight:10,
-                padding:8,
-                usePointStyle:true,
-                pointStyle:'line',
+                boxWidth:10, boxHeight:10, padding:8,
+                usePointStyle:true, pointStyle:'line',
                 // masque les datasets des points
                 filter:(item, chart) => {
                   const ds = chart && chart.data && Array.isArray(chart.data.datasets)
@@ -221,7 +222,7 @@
               titleColor:"#111827", bodyColor:"#4b5563",
               padding:10, cornerRadius:10,
               callbacks:{
-                // Laisse tel quel le label (MM/AAAA ou JJ/MM/AAAA)
+                // Titre = label X tel quel : MM/AAAA pour l’historique, JJ/MM/AAAA (02/2026) pour les points
                 title(items){ return items?.[0]?.label || ''; },
                 label(ctx){
                   const y = ctx.parsed?.y;
@@ -244,14 +245,14 @@
                 maxRotation:0,
                 autoSkip:true,
                 maxTicksLimit:18,
-                // ⚠️ utiliser "function" (pas arrow) pour que "this" = échelle
+                // fonction (pas arrow) pour avoir this=getLabelForValue
                 callback: function(value, idx, ticks){
                   const label = this.getLabelForValue
-                    ? this.getLabelForValue(value)        // Chart.js v4
+                    ? this.getLabelForValue(value)
                     : (this.chart?.data?.labels?.[idx] ?? '');
-                  // toujours afficher le dernier (souvent JJ/MM/AAAA)
+                  // toujours montrer le DERNIER (ici la date cible JJ/MM/AAAA)
                   if (idx === ticks.length - 1) return label;
-                  // si format MM/AAAA, n’en montrer qu’1/2 pour aérer
+                  // pour MM/AAAA : n’en afficher qu’1/2 pour aérer
                   if (/^\d{2}\/\d{4}$/.test(label)) return (idx % 2 === 0) ? label : '';
                   return label;
                 }
@@ -279,7 +280,8 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-        const levels = renderLastValues(liveRows);   // { date, with, without } ou null
+        const levels = renderLastValues(liveRows);   // { with, without }
+
         if (!Array.isArray(histoRows) || !histoRows.length) throw new Error("Historique vide ou JSON invalide.");
         if (!levels) throw new Error("Impossible de lire les dernières valeurs live (with/without).");
 
@@ -292,6 +294,7 @@
   </script>
 </body>
 </html>
+
 
 
 
