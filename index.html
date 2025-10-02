@@ -37,9 +37,9 @@
     const LIVE_URL  = "https://raw.githubusercontent.com/FEPPN/Graph/main/data.json";
 
     // Helpers
-    const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});
+    const fmtMonthFR = v => new Date(v).toLocaleDateString('fr-FR',{year:'numeric',month:'2-digit'});    // MM/AAAA
     const fmtDateFR  = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
-    const fmtDayFR   = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const fmtDayFR   = v => new Date(v).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}); // JJ/MM/AAAA
     const fmtEUR4    = n => (typeof n === 'number' && isFinite(n)) ? n.toFixed(4).replace('.', ',') + "€" : "—";
     const toNum = (val) => {
       if (typeof val === 'number') return val;
@@ -54,7 +54,7 @@
       id: 'pointLabelPlugin',
       afterDatasetsDraw(chart){
         const {ctx, data} = chart;
-        if (!data || !Array.isArray(data.datasets)) return; // garde-fou
+        if (!data || !Array.isArray(data.datasets)) return;
         data.datasets.forEach((ds, di) => {
           if(!ds || !ds.showPointLabel) return;
           const meta = chart.getDatasetMeta(di);
@@ -109,10 +109,11 @@
       let baseVals = clean.map(r => toNum(r.AVG));
       let f2026    = clean.map(r => toNum(r.Forecast2026));
 
-      // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour positionner les points du jour
+      // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour positionner les points du jour & l’afficher sur l’axe
       let liveIdx = -1;
+      let liveLabel = null;
       if (levels && levels.date) {
-        const liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
+        liveLabel = fmtDayFR(levels.date); // JJ/MM/AAAA
         if (!labels.includes(liveLabel)) {
           labels.push(liveLabel);
           baseVals.push(null);
@@ -127,7 +128,7 @@
 
       const datasets = [
         {
-          label: "Tarif Bleu (historique)",
+          label: "Historique",
           data: baseVals,
           borderColor:"#5a52ff",
           backgroundColor:gBase,
@@ -162,36 +163,26 @@
         if (typeof levels.with === 'number') {
           const arrWith = nulls(labels.length); arrWith[liveIdx] = levels.with;
           datasets.push({
-            label: "",
-            customName: "Avec ARENH",
-            type: 'line',
-            data: arrWith,
+            label: "", customName: "Avec ARENH",
+            type: 'line', data: arrWith,
             borderColor: 'transparent',
             pointBackgroundColor: "#0fc4b2",
             pointBorderColor: "#0fc4b2",
-            pointRadius: 5,
-            pointHitRadius: 8,
-            pointHoverRadius: 6,
-            showLine: false,
-            showPointLabel: true,
+            pointRadius: 5, pointHitRadius: 8, pointHoverRadius: 6,
+            showLine: false, showPointLabel: true,
             _skipLegend: true
           });
         }
         if (typeof levels.without === 'number') {
           const arrWithout = nulls(labels.length); arrWithout[liveIdx] = levels.without;
           datasets.push({
-            label: "",
-            customName: "Sans ARENH",
-            type: 'line',
-            data: arrWithout,
+            label: "", customName: "Sans ARENH",
+            type: 'line', data: arrWithout,
             borderColor: 'transparent',
             pointBackgroundColor: "#5a52ff",
             pointBorderColor: "#5a52ff",
-            pointRadius: 5,
-            pointHitRadius: 8,
-            pointHoverRadius: 6,
-            showLine: false,
-            showPointLabel: true,
+            pointRadius: 5, pointHitRadius: 8, pointHoverRadius: 6,
+            showLine: false, showPointLabel: true,
             _skipLegend: true
           });
         }
@@ -203,13 +194,21 @@
         options:{
           responsive:true,
           interaction:{ mode:'nearest', intersect:false },
+          elements:{ point:{ radius:0, hitRadius:6 } },  // défauts sûrs
+
           plugins:{
             legend:{
               position:"bottom",
               labels:{
                 color:"#1f2937",
-                font:{ size:13, weight:"600" },
-                // ✅ filtre défensif pour éviter l'erreur "datasets undefined"
+                // micro-légende
+                font:{ size:11, weight:"600" },
+                boxWidth:10,
+                boxHeight:10,
+                padding:8,
+                usePointStyle:true,
+                pointStyle:'line',
+                // filtre défensif : masque les datasets des points
                 filter:(item, chart) => {
                   const ds = chart && chart.data && Array.isArray(chart.data.datasets)
                     ? chart.data.datasets[item.datasetIndex]
@@ -223,6 +222,10 @@
               titleColor:"#111827", bodyColor:"#4b5563",
               padding:10, cornerRadius:10,
               callbacks:{
+                title:(items)=>{
+                  // Titre lisible : montre JJ/MM/AAAA tel quel si c’est le label live
+                  return items?.[0]?.label || '';
+                },
                 label:(ctx)=>{
                   const y = ctx.parsed?.y;
                   const name = ctx.dataset.customName || ctx.dataset.label || "Valeur";
@@ -232,8 +235,35 @@
             }
           },
           scales:{
-            y:{ ticks:{ color:"#6b7280", callback:v=>`${Number(v).toFixed(3)} €` }, grid:{ color:"rgba(0,0,0,.06)" }, border:{ display:false } },
-            x:{ offset:true, ticks:{ color:"#6b7280", maxRotation:0, autoSkip:true, maxTicksLimit:14 }, grid:{ display:false }, border:{ display:false } }
+            y:{
+              ticks:{ color:"#6b7280", callback:v=>`${Number(v).toFixed(3)} €` },
+              grid:{ color:"rgba(0,0,0,.06)" },
+              border:{ display:false },
+              title:{ display:false }
+            },
+            x:{
+              offset:true,
+              ticks:{
+                color:"#6b7280",
+                // axe X : garder lisible, afficher ~12-16 repères, forcer la dernière date live
+                maxRotation:0,
+                autoSkip:true,
+                maxTicksLimit:16,
+                callback:(value, idx, ticks)=>{
+                  const label = this.getLabelForValue ? this.getLabelForValue(value) : (this.chart?.data?.labels?.[idx] ?? '');
+                  // Toujours afficher le dernier label (probablement JJ/MM/AAAA)
+                  if (idx === (ticks.length - 1)) return label;
+                  // Sinon, n’afficher qu’1 mois sur 2 pour aérer si c’est du MM/AAAA
+                  if (/^\d{2}\/\d{4}$/.test(label)) {
+                    return (idx % 2 === 0) ? label : '';
+                  }
+                  return label;
+                }
+              },
+              grid:{ color:"rgba(0,0,0,0.06)", drawOnChartArea:false },
+              border:{ display:false },
+              title:{ display:false }
+            }
           }
         },
         plugins:[pointLabelPlugin]
@@ -254,7 +284,6 @@
         if(!lRes.ok)  throw new Error("Live HTTP " + lRes.status);
 
         const [histoRows, liveRows] = await Promise.all([hRes.json(), lRes.json()]);
-
         const levels = renderLastValues(liveRows);   // { date, with, without } ou null
         if (!Array.isArray(histoRows) || !histoRows.length) throw new Error("Historique vide ou JSON invalide.");
         if (!levels) throw new Error("Impossible de lire les dernières valeurs live (with/without).");
@@ -268,4 +297,5 @@
   </script>
 </body>
 </html>
+
 
