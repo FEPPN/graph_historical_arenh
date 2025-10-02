@@ -107,7 +107,7 @@
 
       let labels   = clean.map(r => fmtMonthFR(r.Date)); // MM/AAAA
       let baseVals = clean.map(r => toNum(r.AVG));
-      let f2026    = clean.map(r => toNum(r.Forecast2026));
+    
 
       // Ajouter la DERNIÈRE DATE LIVE (JJ/MM/AAAA) pour positionner les points du jour & l’afficher sur l’axe
       let liveIdx = -1;
@@ -116,15 +116,14 @@
         if (!labels.includes(liveLabel)) {
           labels.push(liveLabel);
           baseVals.push(null);
-          f2026.push(null);
+        
         }
         liveIdx = labels.indexOf(liveLabel);
       }
 
       const ctx = document.getElementById("chart").getContext("2d");
       const gBase = ctx.createLinearGradient(0,0,0,300); gBase.addColorStop(0,"rgba(90,82,255,0.22)"); gBase.addColorStop(1,"rgba(90,82,255,0)");
-      const gF    = ctx.createLinearGradient(0,0,0,300); gF.addColorStop(0,"rgba(15,196,178,0.22)"); gF.addColorStop(1,"rgba(15,196,178,0)");
-
+    
       const datasets = [
         {
           label: "Historique",
@@ -132,20 +131,6 @@
           borderColor:"#5a52ff",
           backgroundColor:gBase,
           borderWidth:1.6,
-          pointRadius:0,
-          pointHitRadius:6,
-          spanGaps:true,
-          stepped:"before",
-          tension:0,
-          fill:true
-        },
-        {
-          label: "Projection 2026",
-          data: f2026,
-          borderColor:"#0fc4b2",
-          backgroundColor:gF,
-          borderWidth:1.6,
-          borderDash:[5,4],
           pointRadius:0,
           pointHitRadius:6,
           spanGaps:true,
